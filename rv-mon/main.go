@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"net/url"
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mmcloughlin/geohash"
 	"github.com/oschwald/geoip2-golang"
@@ -23,54 +21,24 @@ import (
 )
 
 var (
-	endpointFlag      string
 	peerAddrFlag      string
 	databaseFlag      string
-	debugLogPath      string
 	writeToInfluxFlag bool
 )
 
 func init() {
-	flag.StringVar(&endpointFlag, "endpoint", "", "relay monitoring endpoint")
-	flag.StringVar(&peerAddrFlag, "peer", "0x1243742340d5504d88af3360036ec9019b933164", "relay peer address")
+	flag.StringVar(&peerAddrFlag, "peer", "", "rendezvous peer address: 0xEth@ip:port")
 	flag.StringVar(&databaseFlag, "db", "geo.mmdb", "path to geoip database")
 	flag.BoolVar(&writeToInfluxFlag, "write", false, "write data to influx")
-	flag.StringVar(&debugLogPath, "debigLog", "/tmp/rv_mon.log", "file to write debug info")
 
 	flag.Parse()
-
-	// init logger
-	logFile, err := os.OpenFile(debugLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot open file for wrinig: %v\n", err)
-		os.Exit(1)
-	}
-
-	defer logFile.Close()
-	log.SetOutput(logFile)
-}
-
-type point struct {
-	geohash string
-	name    string
-	eth     string
 }
 
 func main() {
-	if len(endpointFlag) == 0 {
-		fmt.Fprintln(os.Stderr, "endpoint is empty, exiting")
+	if len(peerAddrFlag) == 0 {
+		log.Println("endpoint is empty, exiting")
 		os.Exit(1)
 	}
-
-	// init logger
-	logFile, err := os.OpenFile(debugLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot open file for wrinig: %v\n", err)
-		os.Exit(1)
-	}
-
-	defer logFile.Close()
-	log.SetOutput(logFile)
 
 	key, err := crypto.GenerateKey()
 	if err != nil {
@@ -87,8 +55,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	creds := auth.NewWalletAuthenticator(util.NewTLS(TLSConfig), common.HexToAddress(peerAddrFlag))
-	client, err := xgrpc.NewClient(ctx, endpointFlag, creds)
+	addr, err := auth.NewAddr(peerAddrFlag)
+	if err != nil {
+		log.Printf("cannot parse string `%s` into peer endpoint: %v\n", peerAddrFlag, err)
+		os.Exit(1)
+	}
+
+	eth, err := addr.ETH()
+	if err != nil {
+		log.Printf("cannot extract eth part from addr `%s`: %v\n", peerAddrFlag, err)
+		os.Exit(1)
+	}
+
+	ip, err := addr.Addr()
+	if err != nil {
+		log.Printf("cannot extract IP part from addr `%s`: %v\n", peerAddrFlag, err)
+		os.Exit(1)
+	}
+
+	creds := auth.NewWalletAuthenticator(util.NewTLS(TLSConfig), eth)
+	client, err := xgrpc.NewClient(ctx, ip, creds)
 	if err != nil {
 		log.Printf("cannot create client connection: %v\n", err)
 		os.Exit(1)
@@ -118,6 +104,7 @@ func main() {
 			rec, err := db.City(ip)
 			if err != nil {
 				log.Printf("cannot find IP `%s` in geoip db: %v\n", ip.String(), err)
+				continue
 			}
 
 			pointEncoded := geohash.Encode(rec.Location.Latitude, rec.Location.Longitude)
@@ -146,7 +133,7 @@ func main() {
 
 func writeToConsole(points map[string]int, names map[string]string) {
 	for hash, counter := range points {
-		fmt.Printf("geohash=%s    name=%s    count=%d\n", hash, names[hash], counter)
+		log.Printf("geohash=%s    name=%s    count=%d\n", hash, names[hash], counter)
 	}
 }
 
@@ -174,7 +161,7 @@ func writeToInflux(points map[string]int, names map[string]string) {
 	infc := getInfluxClient()
 	_, err := infc.Write(pb)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot write influx point: %v\n", err)
+		log.Printf("cannot write influx point: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -182,13 +169,13 @@ func writeToInflux(points map[string]int, names map[string]string) {
 func getInfluxClient() *influx.Client {
 	u, err := url.Parse("http://127.0.0.1:8086")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot parse url O_o: %v\n", err)
+		log.Printf("cannot parse string into url: %v\n", err)
 		os.Exit(1)
 	}
 
 	client, err := influx.NewClient(influx.Config{URL: *u})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot create influx client: %v\n", err)
+		log.Printf("cannot create influx client: %v\n", err)
 		os.Exit(1)
 	}
 
