@@ -76,15 +76,39 @@ func main() {
 	}
 
 	relay := sonm.NewRelayClient(client)
-	cluster, err := relay.Cluster(ctx, &sonm.Empty{})
-	if err != nil {
-		log.Printf("cannot query cluster members: %v\n", err)
-		os.Exit(1)
-	}
+	clusterChan := make(chan *sonm.RelayClusterReply)
+	metricsChan := make(chan *sonm.RelayMetrics)
 
-	v := len(cluster.GetMembers())
-	diff := uint(v) - expectedCountFlag
-	log.Printf("quirying %s for member, got %d, expecting %d, diff %d", endpointFlag, v, expectedCountFlag, diff)
+	go func() {
+		cluster, err := relay.Cluster(ctx, &sonm.Empty{})
+		if err != nil {
+			log.Printf("cannot query cluster members: %v\n", err)
+			os.Exit(1)
+		}
+
+		clusterChan <- cluster
+	}()
+
+	go func() {
+		metrics, err := relay.Metrics(ctx, &sonm.Empty{})
+		if err != nil {
+			log.Printf("cannot query metrics: %v\n", err)
+			os.Exit(1)
+		}
+
+		metricsChan <- metrics
+	}()
+
+	cluster := <-clusterChan
+	metrics := <-metricsChan
+
+	// calculate metrics
+	members := len(cluster.GetMembers())
+	membersDiff := uint(members) - expectedCountFlag
 	iponly := strings.Replace(strings.Split(endpointFlag, ":")[0], ".", "_", 4)
-	fmt.Printf("relay_%s_members count=%d,expect=%d,diff=%d\n", iponly, v, expectedCountFlag, diff)
+	connCount := metrics.GetConnCurrent()
+
+	// show metrics to telegraf collector
+	fmt.Printf("relay_%s_members count=%d,expect=%d,diff=%d,conn_count=%d\n",
+		iponly, members, expectedCountFlag, membersDiff, connCount)
 }
