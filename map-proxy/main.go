@@ -214,7 +214,8 @@ func main() {
 	go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			log.Println("handling http request")
-			w.Header().Add("content-type", "application/json")
+			w.Header().Add("Content-Type", "application/json")
+			w.Header().Add("Access-Control-Allow-Origin", "*")
 
 			points := data.get()
 			b, _ := json.Marshal(points)
