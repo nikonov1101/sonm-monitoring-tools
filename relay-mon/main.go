@@ -28,7 +28,7 @@ func init() {
 	flag.StringVar(&endpointFlag, "endpoint", "", "relay monitoring endpoint")
 	flag.StringVar(&peerAddrFlag, "peer", "0x181b6f75B00e79382aa32D81c7734a46E9F9aF40", "relay peer address")
 	flag.UintVar(&expectedCountFlag, "count", 0, "how many members expect to see in the cluster")
-	flag.StringVar(&debugLogPath, "debigLog", "/tmp/relay_mon.log", "file to write debug info")
+	flag.StringVar(&debugLogPath, "debugLog", "/tmp/relay_mon.log", "file to write debug info")
 	flag.Parse()
 }
 
