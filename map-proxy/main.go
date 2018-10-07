@@ -64,11 +64,9 @@ func (c *cache) update(peers map[string]PeerPoint) {
 	defer c.mu.Unlock()
 
 	if c.green == nil {
-		log.Println("cache: saving to GREEN slot")
 		c.green = peers
 		c.blue = nil
 	} else {
-		log.Println("cache: saving to BLUE slot")
 		c.blue = peers
 		c.green = nil
 	}
@@ -79,10 +77,8 @@ func (c *cache) get() map[string]PeerPoint {
 	defer c.mu.Unlock()
 
 	if c.green != nil {
-		log.Println("cache: reading from GREEN slot")
 		return c.green
 	} else {
-		log.Println("cache: reading from BLUE slot")
 		return c.blue
 	}
 }
