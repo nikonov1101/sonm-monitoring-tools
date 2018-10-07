@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"strings"
 	"sync"
@@ -21,6 +22,8 @@ import (
 	"github.com/sonm-io/core/proto"
 	"github.com/sonm-io/core/util"
 	"github.com/sonm-io/core/util/xgrpc"
+
+	_ "net/http/pprof"
 )
 
 const (
@@ -29,6 +32,8 @@ const (
 	dwhAddr    = "dwh.livenet.sonm.com:15021"
 	dwhEth     = "0xadffcac607a0a1b583c489977eae413a62d4bc73"
 	listedAddr = ":8090"
+
+	pprofPrefix = "/debug/pprof"
 )
 
 var (
@@ -195,6 +200,8 @@ func loadPeersData(ctx context.Context) map[string]PeerPoint {
 
 func main() {
 	log.Println("starting map proxy")
+	go startPprof()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -232,5 +239,27 @@ func main() {
 			peers := loadPeersData(ctx)
 			data.update(peers)
 		}
+	}
+}
+
+func startPprof() {
+	log.Println("starting pprof server")
+
+	listener, err := net.Listen("tcp", "localhost:6060")
+	if err != nil {
+		log.Printf("failed to create pprof listener: %v\n", err)
+		return
+	}
+	defer listener.Close()
+
+	handler := http.NewServeMux()
+	handler.HandleFunc(pprofPrefix+"/", pprof.Index)
+	handler.HandleFunc(pprofPrefix+"/cmdline", pprof.Cmdline)
+	handler.HandleFunc(pprofPrefix+"/profile", pprof.Profile)
+	handler.HandleFunc(pprofPrefix+"/symbol", pprof.Symbol)
+	handler.HandleFunc(pprofPrefix+"/trace", pprof.Trace)
+
+	if err := http.Serve(listener, handler); err != nil {
+		log.Printf("pprof server terminated: %v\n", err)
 	}
 }
