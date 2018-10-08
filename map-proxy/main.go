@@ -159,14 +159,13 @@ func loadDeals(dwh sonm.DWHClient, addr common.Address) (PeerPoint, error) {
 	return p, nil
 }
 
-func loadPeersData(ctx context.Context) map[string]PeerPoint {
+func loadPeersData(ctx context.Context) (map[string]PeerPoint, error) {
 	rvCtx, cancelRv := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelRv()
 
 	info, err := rv.Info(rvCtx, &sonm.Empty{})
 	if err != nil {
-		log.Printf("cannot query rv clients: %v\n", err)
-		os.Exit(1)
+		return nil, err
 	}
 	log.Printf("peers count: %d\n", len(info.State))
 
@@ -185,7 +184,7 @@ func loadPeersData(ctx context.Context) map[string]PeerPoint {
 			ip := net.ParseIP(srv.PublicAddr.Addr.Addr)
 			rec, err := db.City(ip)
 			if err != nil {
-				log.Printf("cannot find IP `%s` with geoipˆ: %v\n", ip.String(), err)
+				log.Printf("cannot find IP `%s` with geoip: %v\n", ip.String(), err)
 				continue
 			}
 
@@ -195,7 +194,7 @@ func loadPeersData(ctx context.Context) map[string]PeerPoint {
 		}
 	}
 
-	return peers
+	return peers, nil
 }
 
 func main() {
@@ -208,7 +207,11 @@ func main() {
 	initConnections(ctx)
 	defer db.Close()
 
-	peers := loadPeersData(ctx)
+	peers, err := loadPeersData(ctx)
+	if err != nil {
+		log.Printf("failed to load initial data from rv: %v\n", err)
+		os.Exit(1)
+	}
 	data := cache{green: peers}
 
 	tk := time.NewTicker(30 * time.Second)
@@ -236,7 +239,12 @@ func main() {
 			log.Println("context cancelled")
 			os.Exit(0)
 		case <-tk.C:
-			peers := loadPeersData(ctx)
+			peers, err := loadPeersData(ctx)
+			if err != nil {
+				log.Printf("failed to update peers list: %v\n", err)
+				continue
+			}
+
 			data.update(peers)
 		}
 	}
