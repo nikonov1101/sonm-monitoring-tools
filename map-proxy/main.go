@@ -125,8 +125,8 @@ func initConnections(ctx context.Context) {
 	}
 }
 
-func loadDeals(dwh sonm.DWHClient, addr common.Address) (PeerPoint, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+func loadDeals(ctx context.Context, dwh sonm.DWHClient, addr common.Address) (PeerPoint, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	deals, err := dwh.GetDeals(ctx, &sonm.DealsRequest{
@@ -161,12 +161,11 @@ func loadDeals(dwh sonm.DWHClient, addr common.Address) (PeerPoint, error) {
 
 func loadPeersData(ctx context.Context) (map[string]PeerPoint, error) {
 	rvCtx, cancelRv := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelRv()
-
 	info, err := rv.Info(rvCtx, &sonm.Empty{})
 	if err != nil {
 		return nil, err
 	}
+	cancelRv()
 	log.Printf("peers count: %d\n", len(info.State))
 
 	peers := map[string]PeerPoint{}
@@ -175,7 +174,7 @@ func loadPeersData(ctx context.Context) (map[string]PeerPoint, error) {
 			parts := strings.Split(addr, "//")
 			peerEth := common.HexToAddress(parts[1])
 
-			point, err := loadDeals(dwh, peerEth)
+			point, err := loadDeals(ctx, dwh, peerEth)
 			if err != nil {
 				log.Printf("failed to query DWH: %v\n", err)
 				continue
@@ -210,7 +209,7 @@ func main() {
 	peers, err := loadPeersData(ctx)
 	if err != nil {
 		log.Printf("failed to load initial data from rv: %v\n", err)
-		os.Exit(1)
+		return
 	}
 	data := cache{green: peers}
 
