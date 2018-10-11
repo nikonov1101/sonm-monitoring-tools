@@ -1,0 +1,13 @@
+[Unit]
+Description=Map proxy
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+Type=simple
+ExecStart=/srv/map/map_proxy
+Restart=on-failure
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
