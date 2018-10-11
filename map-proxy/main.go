@@ -213,7 +213,7 @@ func main() {
 	}
 	data := cache{green: peers}
 
-	tk := time.NewTicker(30 * time.Second)
+	tk := time.NewTicker(120 * time.Second)
 	defer tk.Stop()
 
 	go func() {
