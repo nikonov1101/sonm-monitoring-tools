@@ -229,7 +229,6 @@ func main() {
 
 		log.Printf("starting http server at %s\n", listedAddr)
 		log.Fatal(http.ListenAndServe(listedAddr, nil))
-		cancel()
 	}()
 
 	for {
