@@ -132,9 +132,7 @@ func loadDeals(ctx context.Context, dwh sonm.DWHClient, addr common.Address) (Pe
 	deals, err := dwh.GetDeals(ctx, &sonm.DealsRequest{
 		Status:     sonm.DealStatus_DEAL_ACCEPTED,
 		SupplierID: sonm.NewEthAddress(addr),
-		// MasterID:         nil,
-		// AnyUserID:        nil,
-		Limit: 100,
+		Limit:      100,
 	})
 
 	if err != nil {
@@ -144,6 +142,7 @@ func loadDeals(ctx context.Context, dwh sonm.DWHClient, addr common.Address) (Pe
 	p := PeerPoint{}
 	income := big.NewInt(0)
 	log.Printf("got %d deals for peer %s\n", len(deals.GetDeals()), addr.Hex())
+
 	for _, deal := range deals.GetDeals() {
 		p.Count += 1
 		p.CPUCount += deal.GetDeal().Benchmarks.CPUCores()
@@ -163,34 +162,48 @@ func loadPeersData(ctx context.Context) (map[string]PeerPoint, error) {
 	rvCtx, cancelRv := context.WithTimeout(ctx, 60*time.Second)
 	info, err := rv.Info(rvCtx, &sonm.Empty{})
 	if err != nil {
+		cancelRv()
 		return nil, err
 	}
 	cancelRv()
-	log.Printf("peers count: %d\n", len(info.State))
+	log.Printf("total peers count from rv: %d\n", len(info.State))
 
-	peers := map[string]PeerPoint{}
+	// collect unique peers
+	peerIPs := map[string]string{}
 	for addr, state := range info.GetState() {
 		for _, srv := range state.GetServers() {
 			parts := strings.Split(addr, "//")
 			peerEth := common.HexToAddress(parts[1])
 
-			point, err := loadDeals(ctx, dwh, peerEth)
-			if err != nil {
-				log.Printf("failed to query DWH: %v\n", err)
-				continue
-			}
-
 			ip := net.ParseIP(srv.PublicAddr.Addr.Addr)
-			rec, err := db.City(ip)
-			if err != nil {
-				log.Printf("cannot find IP `%s` with geoip: %v\n", ip.String(), err)
+			if ip == nil {
+				log.Printf("failed to parse `%v` as IP address\n", srv.PublicAddr.Addr.Addr)
 				continue
 			}
 
-			point.Lat = rec.Location.Latitude
-			point.Lon = rec.Location.Longitude
-			peers[peerEth.Hex()] = point
+			peerIPs[peerEth.Hex()] = ip.String()
 		}
+	}
+
+	log.Printf("found %d unique peers\n", len(peerIPs))
+	
+	peers := map[string]PeerPoint{}
+	for eth, ipa := range peerIPs {
+		point, err := loadDeals(ctx, dwh, common.HexToAddress(eth))
+		if err != nil {
+			log.Printf("failed to query DWH: %v\n", err)
+			continue
+		}
+
+		rec, err := db.City(net.ParseIP(ipa))
+		if err != nil {
+			log.Printf("cannot find IP `%s` with geoip: %v\n", ipa, err)
+			continue
+		}
+
+		point.Lat = rec.Location.Latitude
+		point.Lon = rec.Location.Longitude
+		peers[eth] = point
 	}
 
 	return peers, nil
@@ -211,6 +224,8 @@ func main() {
 		log.Printf("failed to load initial data from rv: %v\n", err)
 		return
 	}
+
+	log.Printf("> initial peer points: %v\n", len(peers))
 	data := cache{green: peers}
 
 	tk := time.NewTicker(120 * time.Second)
@@ -243,6 +258,7 @@ func main() {
 				continue
 			}
 
+			log.Printf("> loaded %d peer points\n", len(peers))
 			data.update(peers)
 		}
 	}
