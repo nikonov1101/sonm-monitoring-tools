@@ -49,13 +49,14 @@ func init() {
 }
 
 type PeerPoint struct {
-	Lat      float64 `json:"lat"`
-	Lon      float64 `json:"lon"`
-	Count    int     `json:"count"`
-	Income   float64 `json:"income"`
-	CPUCount uint64  `json:"cpu_count"`
-	GPUCount uint64  `json:"gpu_count"`
-	RAMSize  uint64  `json:"ram_size"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+	Count       int     `json:"count"`
+	Income      float64 `json:"income"`
+	CPUCount    uint64  `json:"cpu_count"`
+	GPUCount    uint64  `json:"gpu_count"`
+	RAMSize     uint64  `json:"ram_size"`
+	EthHashrate uint64  `json:"eth_hashrate"`
 }
 
 type cache struct {
@@ -147,7 +148,8 @@ func loadDeals(ctx context.Context, dwh sonm.DWHClient, addr common.Address) (Pe
 		p.Count += 1
 		p.CPUCount += deal.GetDeal().Benchmarks.CPUCores()
 		p.GPUCount += deal.GetDeal().GetBenchmarks().GPUCount()
-		p.RAMSize = deal.GetDeal().GetBenchmarks().RAMSize()
+		p.RAMSize += deal.GetDeal().GetBenchmarks().RAMSize()
+		p.EthHashrate += deal.GetDeal().GetBenchmarks().GPUEthHashrate()
 		income = big.NewInt(0).Add(income, deal.GetDeal().GetPrice().Unwrap())
 	}
 
@@ -155,6 +157,8 @@ func loadDeals(ctx context.Context, dwh sonm.DWHClient, addr common.Address) (Pe
 	perHourF := big.NewFloat(0).SetInt(perHour)
 	total := big.NewFloat(0).Quo(perHourF, big.NewFloat(params.Ether))
 	p.Income, _ = total.Float64()
+
+	// log.Printf("    %s -> %v $/h (%d x %d)", addr.Hex(), p.Income, p.GPUCount, p.EthHashrate)
 	return p, nil
 }
 
@@ -183,10 +187,23 @@ func loadPeersData(ctx context.Context) (map[string]PeerPoint, error) {
 
 			peerIPs[peerEth.Hex()] = ip.String()
 		}
+
+		for _, srv := range state.GetClients() {
+			parts := strings.Split(addr, "//")
+			peerEth := common.HexToAddress(parts[1])
+
+			ip := net.ParseIP(srv.PublicAddr.Addr.Addr)
+			if ip == nil {
+				log.Printf("failed to parse `%v` as IP address\n", srv.PublicAddr.Addr.Addr)
+				continue
+			}
+
+			peerIPs[peerEth.Hex()] = ip.String()
+		}
 	}
 
 	log.Printf("found %d unique peers\n", len(peerIPs))
-	
+
 	peers := map[string]PeerPoint{}
 	for eth, ipa := range peerIPs {
 		point, err := loadDeals(ctx, dwh, common.HexToAddress(eth))
