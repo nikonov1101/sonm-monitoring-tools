@@ -55,7 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	addr, err := auth.NewAddr(peerAddrFlag)
+	addr, err := auth.ParseAddr(peerAddrFlag)
 	if err != nil {
 		log.Printf("cannot parse string `%s` into peer endpoint: %v\n", peerAddrFlag, err)
 		os.Exit(1)
